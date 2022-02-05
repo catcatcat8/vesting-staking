@@ -2,57 +2,16 @@
 
 pragma solidity >0.6.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract VestingStaking is IERC20, Ownable {
+import "./Token.sol";
+
+contract VestingStaking is Ownable{
     using SafeMath for uint256;
 
-    //-------------------------------------------------------------------------
-    // ERC20
-    //-------------------------------------------------------------------------
-
-    /// @notice ERC-20 token name
-    string public name = "VestingStakingToken";
-
-    /// @notice ERC-20 token symbol for this token
-    string public symbol = "VST";
-
-    /// @notice ERC-20 token decimals for this token
-    uint8 public decimals = 18;
-
-    /// @notice Total balances of tokens among the accounts
-    uint256 public override totalSupply = 0;
- 
-    /// @dev Allowance amounts on behalf of others
-    mapping(address => mapping(address => uint256)) internal allowances;
-
-    /// @dev Owners' balances of VST
-    mapping(address => uint256) internal balances;
-
-    /// @dev Owners of VST
-    address[] public owners;
-    mapping (address => bool) public isOwner;
-
-    /// @notice The standard EIP-20 transfer event
-    event Transfer(address indexed from, address indexed to, uint256 amount);
-
-    /// @notice The standard EIP-20 approval event
-    event Approval(address indexed owner, address indexed spender, uint256 amount);
-
-    /// @notice An event thats emitted when owner receives tokens
-    event MintTokens(address receiver, uint256 value);
-
-    /// @notice An event thats emitted when owner loses tokens
-    event BurnTokens(address owner, uint256 value);
-
-
-    //-------------------------------------------------------------------------
-    // VESTING-STAKING
-    //-------------------------------------------------------------------------
-
-    address internal contractOwner;
+    address public contractOwner;
+    address public tokenAddress;
 
     uint256 public startingTimestamp;
 
@@ -88,6 +47,9 @@ contract VestingStaking is IERC20, Ownable {
         uint256 vestingStrategyNumber;
     }
 
+    // The pool from which the admin pays rewards; Always: balanceOf(contractOwner) >= TVL + rewardPool
+    uint256 public rewardPool;
+
     // Stakeholders and stakes
     mapping (address => StakeInfo) public stakes;
     mapping (address => bool) public isStakeholder;
@@ -101,15 +63,14 @@ contract VestingStaking is IERC20, Ownable {
 
 
     /**
-     * @dev Initializing owner of the contract
+     * @dev Initializing token for vesting-staking
      */
-    constructor() public {
-        owners.push(msg.sender);
-        isOwner[msg.sender] = true;
+    constructor(address _tokenAddress) public {
+        tokenAddress = _tokenAddress;
         contractOwner = msg.sender;
         status = Status.NotStarted;
-        _mint(msg.sender, 1_000_000);
     }
+
 
     function createWestingStrategy(uint256 _cliffTimeInDays, uint256 _vestingTimeInDays, VestingStrategies _vestingStrategy) external onlyOwner() {
         require(_cliffTimeInDays >= 1);
@@ -122,6 +83,7 @@ contract VestingStaking is IERC20, Ownable {
         vestingStrategies[vestingStrategiesAmount] = newVestingStrat; 
     }
 
+
     function addToWhitelist(address[] memory _accounts) external onlyOwner() {
         require(_accounts.length < 10, "It's allowed to add up to 10 accounts at a time");
         for (uint256 i=0; i<_accounts.length; i++) {
@@ -129,10 +91,12 @@ contract VestingStaking is IERC20, Ownable {
         }
     }
 
+
     function deleteFromWhitelist(address _account) external onlyOwner() {
         require(isWhitelisted[_account] == true, "This account is not in the whitelist");
         isWhitelisted[_account] = false;
     }
+
 
     function initAllocations(address[] memory _accounts, uint256[] memory _stake, uint256[] memory _strategies) external onlyOwner() {
         require(_accounts.length == _stake.length &&_accounts.length == _strategies.length, "Arrays are not the same size");
@@ -146,7 +110,7 @@ contract VestingStaking is IERC20, Ownable {
             uint256 stake = _stake[i];
             uint256 strategyNum = _strategies[i];
             require(account != address(0));
-            require(balanceOf(contractOwner) >= stake);
+            require(Token(tokenAddress).balanceOf(contractOwner) >= stake + totalValueLocked);
             require(stake > 0 && stake < 50_000);
             require(strategyNum != 0 && strategyNum <= vestingStrategiesAmount);
 
@@ -157,25 +121,25 @@ contract VestingStaking is IERC20, Ownable {
             isStakeholder[account] = true;
 
             totalValueLocked = totalValueLocked.add(stake);
-
-            owners.push(account);
-            isOwner[account] = true;
-            _burn(contractOwner, stake);
         }
     }
 
-    function start(uint256 _rewardPerHour) external onlyOwner() {
+
+    function start(uint256 _rewardPerHour, uint256 _rewardPool) external onlyOwner() {
+        require(Token(tokenAddress).balanceOf(contractOwner) >= _rewardPool + totalValueLocked);
         rewardPerHour = _rewardPerHour;
         status = Status.Started;
         startingTimestamp = block.timestamp;
+        rewardPool = _rewardPool;
     }
+
 
     function stake(uint256 _stake, uint256 _strategyNum) external {
         require(status == Status.Started, "Vesting-staking hasn't started yet");
         require(isStakeholder[msg.sender] != true, "You are stakeholder already");
         require(isWhitelisted[msg.sender] == true, "You are not in the whitelist, ask admin to add you");
-        require(balanceOf(contractOwner) >= _stake, "Contract owner doesn't have that many tokens");
         require(_strategyNum != 0 && _strategyNum <= vestingStrategiesAmount, "Wrong strategy number");
+        require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _stake, "Contract owner doesn't have that many tokens");
 
         StakeInfo memory newStake = StakeInfo(
             _stake, 0, block.timestamp, 0, _strategyNum
@@ -184,24 +148,24 @@ contract VestingStaking is IERC20, Ownable {
         isStakeholder[msg.sender] = true;
 
         totalValueLocked = totalValueLocked.add(_stake);
-
-        owners.push(msg.sender);
-        isOwner[msg.sender] = true;
-        _burn(contractOwner, _stake);
     }
+
 
     function getReward() external {
         uint256 tokensReward = calculateCurrentReward(msg.sender);
-            
-        _mint(msg.sender, tokensReward);
+        require(tokensReward != 0);
+        require(rewardPool >= tokensReward, "Not enough tokens in reward pool");
+        Token(tokenAddress).transferFrom(contractOwner, msg.sender, tokensReward);
+        rewardPool = rewardPool.sub(tokensReward);
         stakes[msg.sender].lastRewardTimestamp = block.timestamp;
     }
+
 
     function vestingWithdraw() external {
         uint256 withdraw = calculateVestingSchedule(msg.sender);
         require(withdraw != 0);
 
-        _mint(msg.sender, withdraw);
+        Token(tokenAddress).transferFrom(contractOwner, msg.sender, withdraw);
         stakes[msg.sender].tokensStaked = stakes[msg.sender].tokensStaked.sub(withdraw);
         stakes[msg.sender].vestingWithdrawed = stakes[msg.sender].vestingWithdrawed.add(withdraw);
         totalValueLocked = totalValueLocked.sub(withdraw);
@@ -237,13 +201,12 @@ contract VestingStaking is IERC20, Ownable {
     function editAmountPerWallet(address _account, uint256 _amount) external onlyOwner() {
         require(status == Status.NotStarted, "Staking is started already");
         require(isStakeholder[_account] == true, "This account is not a stakeholder");
-        require(balanceOf(contractOwner) >= _amount, "Contract owner doesn't have that many tokens");
         require(_amount > 0);
         
         uint256 prevAmount = stakes[_account].tokensStaked;
-        _mint(contractOwner, prevAmount);
+        require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _amount - prevAmount, "Contract owner doesn't have that many tokens");
+
         stakes[_account].tokensStaked = _amount;
-        _burn(contractOwner, _amount);
 
         totalValueLocked = totalValueLocked.sub(prevAmount).add(_amount);
     }
@@ -290,19 +253,24 @@ contract VestingStaking is IERC20, Ownable {
     }
 
     function addAditionalReward(uint256 _extraReward) external onlyOwner() {
-        rewardPerHour = rewardPerHour.add(_extraReward);
+        require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _extraReward);
+        rewardPool = rewardPool.add(_extraReward);
     }
 
     function getTVLAmount() public view returns (uint256) {
         return totalValueLocked;
     }
 
-    function getAPY() public view returns (uint256) {
+    function getAPYStaked() public view returns (uint256) {
         return (rewardPerHour * 24 * 365 * 100) / totalValueLocked;
     }
 
+    function getAPYNotStaked(uint256 _stake) public view returns (uint256) {
+        return (rewardPerHour * 24 * 365 * 100) / (totalValueLocked + _stake);
+    }
+
     function getTotalSupply() public view returns (uint256) {
-        return totalSupply;
+        return Token(tokenAddress).totalSupply();
     }
 
     function getStackedTokens(address _account) public view returns (uint256) {
@@ -344,78 +312,5 @@ contract VestingStaking is IERC20, Ownable {
 
     function getStrategyType(uint256 _strategyNumber) public view returns (VestingStrategies) {
         return vestingStrategies[_strategyNumber].vestingStrategy;
-    }
-
-    //-------------------------------------------------------------------------
-    // ERC20 BASIC FUNCTIONS
-    //-------------------------------------------------------------------------
-
-    function allowance(address account, address spender) external override view returns (uint256) {
-        return allowances[account][spender];
-    }
-
-    function approve(address spender, uint256 amount) public virtual override returns (bool) {
-        _approve(_msgSender(), spender, amount);
-        return true;
-    }
-
-    function _approve(address owner, address spender, uint256 amount) internal virtual {
-        require(owner != address(0), "ERC20: approve from the zero address");
-        require(spender != address(0), "ERC20: approve to the zero address");
-
-        allowances[owner][spender] = amount;
-        emit Approval(owner, spender, amount);
-    }
-
-    function balanceOf(address account) public view virtual override returns (uint256) {
-        return balances[account];
-    }
-    
-    function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
-        require(isOwner[msg.sender]);
-        _transfer(_msgSender(), recipient, amount);
-        return true;
-    }
-
-    function transferFrom(address sender, address recipient, uint256 amount) public virtual override returns (bool) {
-        uint256 currentAllowance = allowances[sender][_msgSender()];
-        require(currentAllowance >= amount, "ERC20: transfer amount exceeds allowance");
-
-        _transfer(sender, recipient, amount);
-        _approve(sender, _msgSender(), currentAllowance - amount);
-
-        return true;
-    }
-
-    function _transfer(address sender, address recipient, uint256 amount) internal virtual {
-        require(sender != address(0), "ERC20: transfer from the zero address");
-        require(recipient != address(0), "ERC20: transfer to the zero address");
-
-        if (!isOwner[recipient]) {
-            isOwner[recipient] = true;
-            owners.push(recipient);
-        }
-        uint256 senderBalance = balances[sender];
-        require(senderBalance >= amount, "ERC20: transfer amount exceeds balance");
-        balances[sender] = senderBalance - amount;
-        balances[recipient] += amount;
-
-        emit Transfer(sender, recipient, amount);
-    }
-
-    function _mint(address _account, uint256 _tokens) internal {
-        require(isOwner[_account], "Lottery::_mint: mint to non-owner");
-
-        totalSupply = totalSupply.add(_tokens);
-        balances[_account] = balances[_account].add(_tokens);
-        emit MintTokens(_account, _tokens);
-    }
-
-    function _burn(address _account, uint256 _tokens) internal {
-        require(isOwner[_account], "Lottery::_burn: burn from non-owner");
-
-        totalSupply = totalSupply.sub(_tokens);
-        balances[_account] = balances[_account].sub(_tokens);
-        emit BurnTokens(_account, _tokens);
     }
 }

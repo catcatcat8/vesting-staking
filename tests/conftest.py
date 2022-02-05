@@ -10,5 +10,17 @@ def isolate(fn_isolation):
 
 
 @pytest.fixture(scope="module")
-def vestingStaking(VestingStaking, accounts):
-    return VestingStaking.deploy({'from': accounts[0]})
+def vestingStaking(VestingStaking, Token, accounts):
+    token = Token.deploy({'from': accounts[0]})
+    return VestingStaking.deploy(token, {'from': accounts[0]})
+
+
+@pytest.fixture(scope="module")
+def token(Token, accounts):
+    return Token.deploy({'from': accounts[0]})
+
+
+@pytest.fixture(scope="module")
+def vestingStakingAndToken(VestingStaking, Token, accounts):
+    token = Token.deploy({'from': accounts[0]})
+    return [VestingStaking.deploy(token, {'from': accounts[0]}), token]

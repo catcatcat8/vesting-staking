@@ -7,12 +7,13 @@ def test_start(accounts, vestingStaking):
     linear = 0
     stepped = 1
     reward_per_hour = 100
+    reward_pool = 1_000_000_000
 
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, linear, {'from': accounts[0]})
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, stepped, {'from': accounts[0]})
 
     start_time = brownie.chain.time()
-    vestingStaking.start(reward_per_hour, {'from': accounts[0]})
+    vestingStaking.start(reward_per_hour, reward_pool, {'from': accounts[0]})
 
     assert vestingStaking.rewardPerHour() == reward_per_hour
     assert vestingStaking.status() == 1   # 0 - not started; 1 - started
@@ -38,10 +39,11 @@ def test_stake_not_whitelisted(accounts, vestingStaking):
     linear = 0
     stepped = 1
     reward_per_hour = 100
+    reward_pool = 1_000_000_000
 
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, linear, {'from': accounts[0]})
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, stepped, {'from': accounts[0]})
-    vestingStaking.start(reward_per_hour, {'from': accounts[0]})
+    vestingStaking.start(reward_per_hour, reward_pool, {'from': accounts[0]})
 
     with brownie.reverts():
         vestingStaking.stake(60, 1, {"from": accounts[1]})
@@ -53,10 +55,11 @@ def test_stake_wrong_strategy(accounts, vestingStaking):
     linear = 0
     stepped = 1
     reward_per_hour = 100
+    reward_pool = 1_000_000_000
 
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, linear, {'from': accounts[0]})
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, stepped, {'from': accounts[0]})
-    vestingStaking.start(reward_per_hour, {'from': accounts[0]})
+    vestingStaking.start(reward_per_hour, reward_pool, {'from': accounts[0]})
     vestingStaking.addToWhitelist((accounts[1],), {"from": accounts[0]})
 
     strategy_num = 100
@@ -70,10 +73,11 @@ def test_correct_stake_from_whitelist(accounts, vestingStaking):
     linear = 0
     stepped = 1
     reward_per_hour = 100
+    reward_pool = 1_000_000_000
 
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, linear, {'from': accounts[0]})
     vestingStaking.createWestingStrategy(cliff_time_in_days, vesting_time_in_days, stepped, {'from': accounts[0]})
-    vestingStaking.start(reward_per_hour, {'from': accounts[0]})
+    vestingStaking.start(reward_per_hour, reward_pool, {'from': accounts[0]})
     vestingStaking.addToWhitelist((accounts[1],), {"from": accounts[0]})
 
     strategy_num = 1
