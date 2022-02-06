@@ -15,6 +15,7 @@ contract VestingStaking is Ownable{
 
     uint256 public startingTimestamp;
 
+    // Total staked tokens
     uint256 public totalValueLocked;
 
     uint256 public rewardPerHour;
@@ -52,7 +53,8 @@ contract VestingStaking is Ownable{
     uint256 public rewardPerTokenStored;
     uint256 public lastUpdateTime;
 
-    // The pool from which the admin pays rewards; Always: balanceOf(contractOwner) >= TVL + rewardPool
+    // The pool from which the admin pays rewards 
+    // Always: balanceOf(contractOwner) >= TVL + rewardPool
     uint256 public rewardPool;
 
     // Stakeholders and stakes
@@ -63,23 +65,21 @@ contract VestingStaking is Ownable{
     uint256 public vestingStrategiesAmount = 0;
     mapping (uint256 => VestingInfo) public vestingStrategies;
 
-    // Whitelist
+    // Whitelisted accounts can stake tokens after calling start() by the owner
     mapping (address => bool) public isWhitelisted;
 
     //-------------------------------------------------------------------------
     // STATE MODIFYING FUNCTIONS
     //-------------------------------------------------------------------------
 
-    /**
-     * @dev Initializing token for vesting-staking
-     */
+    // Initializing token for vesting-staking
     constructor(address _tokenAddress) public {
         tokenAddress = _tokenAddress;
         contractOwner = msg.sender;
         status = Status.NotStarted;
     }
 
-
+    // Creating linear or stepped (50% tokens in each half of vesting time) westing strategy by the contract owner
     function createWestingStrategy(uint256 _cliffTimeInDays, uint256 _vestingTimeInDays, VestingStrategies _vestingStrategy) external onlyOwner() {
         require(_cliffTimeInDays >= 1);
         require(_vestingTimeInDays > 1);
@@ -91,7 +91,7 @@ contract VestingStaking is Ownable{
         vestingStrategies[vestingStrategiesAmount] = newVestingStrat; 
     }
 
-
+    // Adding accounts to the whitelist
     function addToWhitelist(address[] memory _accounts) external onlyOwner() {
         require(_accounts.length < 10, "It's allowed to add up to 10 accounts at a time");
         for (uint256 i=0; i<_accounts.length; i++) {
@@ -99,7 +99,7 @@ contract VestingStaking is Ownable{
         }
     }
 
-
+    // Deleting account from the whitelist
     function deleteFromWhitelist(address _account) external onlyOwner() {
         require(isWhitelisted[_account], "This account is not in the whitelist");
         isWhitelisted[_account] = false;
@@ -130,7 +130,7 @@ contract VestingStaking is Ownable{
         }
     }
 
-
+    // Start of vesting-staking and initializing rewards by the contract owner
     function start(uint256 _rewardPerHour, uint256 _rewardPool) external onlyOwner() {
         require(Token(tokenAddress).balanceOf(contractOwner) >= _rewardPool + totalValueLocked);
         rewardPerHour = _rewardPerHour;
@@ -140,7 +140,7 @@ contract VestingStaking is Ownable{
         rewardPool = _rewardPool;
     }
 
-
+    // Staking and choosing vesting strategy by whitelisted account
     function stake(uint256 _stake, uint256 _strategyNum) external updateReward {
         require(status == Status.Started, "Vesting-staking hasn't started yet");
         require(!isStakeholder[msg.sender], "You are stakeholder already");
@@ -158,7 +158,7 @@ contract VestingStaking is Ownable{
         totalValueLocked = totalValueLocked.add(_stake);
     }
 
-
+    // Getting stake reward to the balance of ERC20 token according to account's stake share to TVL
     function getReward() external updateReward {
         uint256 tokensReward = stakes[msg.sender].reward;
         require(tokensReward != 0);
@@ -169,7 +169,7 @@ contract VestingStaking is Ownable{
         stakes[msg.sender].reward = 0;
     }
 
-
+    // Withdraw staked tokens according to the vesting strategy. Decreases your share in TVL.
     function vestingWithdraw() external updateReward {
         uint256 withdraw = calculateVestingSchedule(msg.sender);
         require(withdraw != 0);
@@ -180,7 +180,7 @@ contract VestingStaking is Ownable{
         totalValueLocked = totalValueLocked.sub(withdraw);
     }
 
-
+    // Admin function for editing the amount of staked token for account before start() is called
     function editAmountPerWallet(address _account, uint256 _amount) external onlyOwner() {
         require(status == Status.NotStarted, "Staking is started already");
         require(isStakeholder[_account], "This account is not a stakeholder");
@@ -194,7 +194,7 @@ contract VestingStaking is Ownable{
         totalValueLocked = totalValueLocked.sub(prevAmount).add(_amount);
     }
 
-
+    // Replenishment of the reward pool by the contract owner
     function addAditionalReward(uint256 _extraReward) external onlyOwner() {
         require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _extraReward);
         rewardPool = rewardPool.add(_extraReward);
@@ -204,6 +204,7 @@ contract VestingStaking is Ownable{
     // MODIFIERS
     //-------------------------------------------------------------------------
 
+    // Called when someone stakes, withdraws or receives tokens (synthetix-staking algorithm)
     modifier updateReward() {
         rewardPerTokenStored = _rewardPerToken();
         lastUpdateTime = block.timestamp;
@@ -216,6 +217,7 @@ contract VestingStaking is Ownable{
     // INTERNAL FUNCTIONS
     //-------------------------------------------------------------------------
 
+    // Calculates not paid current reward per staked token
     function _rewardPerToken() internal returns (uint256) {
         if (totalValueLocked == 0) {
             return 0;
@@ -225,6 +227,7 @@ contract VestingStaking is Ownable{
         );
     }
 
+    // Calculates reward for stakeholder
     function _earned() internal returns (uint256) {
         return (stakes[msg.sender].tokensStaked * (_rewardPerToken() - stakes[msg.sender].rewardPerTokenPaid) / 1e18) + stakes[msg.sender].reward;
     }
@@ -233,6 +236,7 @@ contract VestingStaking is Ownable{
     // VIEW FUNCTIONS
     //-------------------------------------------------------------------------
 
+    // Calculates the amount of vesting schedule tokens for withdrawing
     function calculateVestingSchedule(address _account) public view returns (uint256) {
         require(status == Status.Started, "Vesting-staking hasn't started yet");
         require(isStakeholder[_account], "User is not a stakeholder");
