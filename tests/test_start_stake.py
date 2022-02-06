@@ -91,5 +91,4 @@ def test_correct_stake_from_whitelist(accounts, vestingStaking):
     assert vestingStaking.stakes(accounts[1])[0] == stake_sum  # tokens staked
     assert vestingStaking.stakes(accounts[1])[1] == 0  # vesting withdrawed
     assert vestingStaking.stakes(accounts[1])[2] in range(time_of_stake, time_of_stake + 2)  # start time (operations from above will take no more than a second)
-    assert vestingStaking.stakes(accounts[1])[3] == 0  # last reward timestamp
-    assert vestingStaking.stakes(accounts[1])[4] == strategy_num  # vesting strategy number (1 - linear, 2 - stepped)
+    assert vestingStaking.stakes(accounts[1])[3] == strategy_num  # vesting strategy number (1 - linear, 2 - stepped)

@@ -34,7 +34,7 @@ def test_correct_reward(accounts, vestingStakingAndToken):
     balance_of_second_acc_before_reward = token_contract.balanceOf(second_acc)
 
     hours_passed = 1
-    brownie.chain.sleep(hours_passed * 3600 + 1)  # 1 hour and 1 second (for getting reward)
+    brownie.chain.sleep(hours_passed * 3600)  # 1 hour
     vesting_contract.getReward({"from": accounts[1]})
     assert token_contract.balanceOf(first_acc) == balance_of_first_acc_before_reward + (first_stake * reward_per_hour * hours_passed // total_value_locked)
 
@@ -42,13 +42,13 @@ def test_correct_reward(accounts, vestingStakingAndToken):
     assert token_contract.balanceOf(second_acc) == balance_of_second_acc_before_reward + (second_stake * reward_per_hour * hours_passed // total_value_locked)
 
     hours_passed = 2
-    brownie.chain.sleep(hours_passed * 3600 + 100)  # 2 hours and 1 second
+    brownie.chain.sleep(hours_passed * 3600)  # 2 hours
     balance_of_first_acc_before_reward = token_contract.balanceOf(first_acc)
     vesting_contract.getReward({"from": accounts[1]})
     assert token_contract.balanceOf(first_acc) == balance_of_first_acc_before_reward + (first_stake * reward_per_hour * hours_passed // total_value_locked)
 
 
-def test_get_reward_before_one_hour(accounts, vestingStakingAndToken):
+def test_get_reward_before_at_least_one_token_earned(accounts, vestingStakingAndToken):
     vesting_contract = vestingStakingAndToken[0]
     token_contract = vestingStakingAndToken[1]
     token_contract.approve(vesting_contract, token_contract.balanceOf(vesting_contract.contractOwner()))  # approve to vesting contract to spend tokens from owner
@@ -132,7 +132,7 @@ def test_get_reward_by_whitelisted_stakeholder(accounts, vestingStakingAndToken)
     assert tvl == first_acc_stake + second_acc_stake
     
     hours_passed = 1
-    brownie.chain.sleep(hours_passed * 3600 + 1)  # 1 hour and 1 second (for getting reward)
+    brownie.chain.sleep(hours_passed * 3600)  # 1 hour
     balance_before_reward = token_contract.balanceOf(accounts[2])
     vesting_contract.getReward({'from': accounts[2]})
 

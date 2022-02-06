@@ -43,9 +43,13 @@ contract VestingStaking is Ownable{
         uint256 tokensStaked;
         uint256 vestingWithdrawed;
         uint256 startingTimestamp;
-        uint256 lastRewardTimestamp;
         uint256 vestingStrategyNumber;
+        uint256 rewardPerTokenPaid;
+        uint256 reward;
     }
+
+    uint256 public rewardPerTokenStored;
+    uint256 public lastUpdateTime;
 
     // The pool from which the admin pays rewards; Always: balanceOf(contractOwner) >= TVL + rewardPool
     uint256 public rewardPool;
@@ -102,8 +106,6 @@ contract VestingStaking is Ownable{
         require(_accounts.length == _stake.length &&_accounts.length == _strategies.length, "Arrays are not the same size");
         require(_accounts.length < 10, "It's allowed to add up to 10 accounts at a time");
         uint256 startTimestamp = block.timestamp;
-        uint256 lastRewardTimestamp = 0;
-        uint256 withdrawed = 0;
 
         for (uint i=0; i<_accounts.length; i++) {
             address account = _accounts[i];
@@ -115,7 +117,7 @@ contract VestingStaking is Ownable{
             require(strategyNum != 0 && strategyNum <= vestingStrategiesAmount);
 
             StakeInfo memory newStake = StakeInfo(
-                stake, withdrawed, startTimestamp, lastRewardTimestamp, strategyNum
+                stake, 0, startTimestamp, strategyNum, 0, 0
             );
             stakes[account] = newStake;
             isStakeholder[account] = true;
@@ -130,38 +132,64 @@ contract VestingStaking is Ownable{
         rewardPerHour = _rewardPerHour;
         status = Status.Started;
         startingTimestamp = block.timestamp;
+        lastUpdateTime = startingTimestamp;
         rewardPool = _rewardPool;
     }
 
 
-    function stake(uint256 _stake, uint256 _strategyNum) external {
+    modifier updateReward() {
+        rewardPerTokenStored = _rewardPerToken();
+        lastUpdateTime = block.timestamp;
+        stakes[msg.sender].reward = _earned();
+        stakes[msg.sender].rewardPerTokenPaid = rewardPerTokenStored;
+        _;
+    }
+
+
+    function _rewardPerToken() internal returns (uint256) {
+        if (totalValueLocked == 0) {
+            return 0;
+        }
+        return rewardPerTokenStored + (
+            rewardPerHour * (block.timestamp - lastUpdateTime) * 1e18 / totalValueLocked / 1 hours
+        );
+    }
+
+    function _earned() internal returns (uint256) {
+        return (stakes[msg.sender].tokensStaked * (_rewardPerToken() - stakes[msg.sender].rewardPerTokenPaid) / 1e18) + stakes[msg.sender].reward;
+    }
+
+
+    function stake(uint256 _stake, uint256 _strategyNum) external updateReward {
         require(status == Status.Started, "Vesting-staking hasn't started yet");
         require(isStakeholder[msg.sender] != true, "You are stakeholder already");
         require(isWhitelisted[msg.sender] == true, "You are not in the whitelist, ask admin to add you");
         require(_strategyNum != 0 && _strategyNum <= vestingStrategiesAmount, "Wrong strategy number");
         require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _stake, "Contract owner doesn't have that many tokens");
 
-        StakeInfo memory newStake = StakeInfo(
-            _stake, 0, block.timestamp, 0, _strategyNum
-        );
-        stakes[msg.sender] = newStake;
+        stakes[msg.sender].tokensStaked = _stake;
+        stakes[msg.sender].vestingWithdrawed = 0;
+        stakes[msg.sender].startingTimestamp = block.timestamp;
+        stakes[msg.sender].vestingStrategyNumber = _strategyNum;
+
         isStakeholder[msg.sender] = true;
 
         totalValueLocked = totalValueLocked.add(_stake);
     }
 
 
-    function getReward() external {
-        uint256 tokensReward = calculateCurrentReward(msg.sender);
+    function getReward() external updateReward {
+        uint256 tokensReward = stakes[msg.sender].reward;
         require(tokensReward != 0);
         require(rewardPool >= tokensReward, "Not enough tokens in reward pool");
+
         Token(tokenAddress).transferFrom(contractOwner, msg.sender, tokensReward);
         rewardPool = rewardPool.sub(tokensReward);
-        stakes[msg.sender].lastRewardTimestamp = block.timestamp;
+        stakes[msg.sender].reward = 0;
     }
 
 
-    function vestingWithdraw() external {
+    function vestingWithdraw() external updateReward {
         uint256 withdraw = calculateVestingSchedule(msg.sender);
         require(withdraw != 0);
 
@@ -169,32 +197,6 @@ contract VestingStaking is Ownable{
         stakes[msg.sender].tokensStaked = stakes[msg.sender].tokensStaked.sub(withdraw);
         stakes[msg.sender].vestingWithdrawed = stakes[msg.sender].vestingWithdrawed.add(withdraw);
         totalValueLocked = totalValueLocked.sub(withdraw);
-    }
-
-
-    function calculateCurrentReward(address _account) public view returns (uint256) {
-        require(status == Status.Started, "Vesting-staking hasn't started yet");
-        require(isStakeholder[msg.sender] == true, "You are not stakeholder");
-
-        uint256 lastRewardTime = 0;
-
-        if (stakes[_account].lastRewardTimestamp == 0) {
-            if (stakes[_account].startingTimestamp < startingTimestamp) {
-                lastRewardTime = startingTimestamp;
-            }
-            else {
-                lastRewardTime = stakes[_account].startingTimestamp;
-            }
-        }
-        else {
-            lastRewardTime = stakes[_account].lastRewardTimestamp;
-        }
-
-        require(block.timestamp.sub(lastRewardTime) >= 3600, "At least one hour must pass to receive the reward");
-        uint256 hoursAmount = block.timestamp.sub(lastRewardTime).div(1 hours);
-
-        uint256 tokensReward = stakes[_account].tokensStaked.mul(rewardPerHour).mul(hoursAmount).div(totalValueLocked);
-        return tokensReward;
     }
 
 
@@ -257,6 +259,7 @@ contract VestingStaking is Ownable{
         rewardPool = rewardPool.add(_extraReward);
     }
 
+
     function getTVLAmount() public view returns (uint256) {
         return totalValueLocked;
     }
@@ -285,21 +288,16 @@ contract VestingStaking is Ownable{
         return stakes[_account].startingTimestamp;
     }
 
-    function getLastRewardTimestamp(address _account) public view returns (uint256) {
-        return stakes[_account].lastRewardTimestamp;
-    }
-
     function getVestingStrategyNumber(address _account) public view returns (uint256) {
         return stakes[_account].vestingStrategyNumber;
     }
 
-    function getAllUserInfo(address _account) public view returns (uint256, uint256, uint256, uint256, uint256) {
+    function getAllUserInfo(address _account) public view returns (uint256, uint256, uint256, uint256) {
         uint256 stakecount = getStackedTokens(_account);
         uint256 withdraw = getWithdrawedVestingTokens(_account);
         uint256 starttime = getsStartingTimestampOfStacking(_account);
-        uint256 lastReward = getLastRewardTimestamp(_account);
         uint256 strategy = getVestingStrategyNumber(_account);
-        return (stakecount, withdraw, starttime, lastReward, strategy);
+        return (stakecount, withdraw, starttime, strategy);
     }
 
     function getStrategyCliffTime(uint256 _strategyNumber) public view returns (uint256) {

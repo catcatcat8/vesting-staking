@@ -27,14 +27,12 @@ def test_correct_init_allocations(accounts, vestingStaking):
     assert vestingStaking.stakes(first_acc)[0] == first_stake  # tokens staked
     assert vestingStaking.stakes(first_acc)[1] == 0  # vesting withdrawed
     assert vestingStaking.stakes(first_acc)[2] in range(start_time, start_time + 2)  # start time (operations from above will take no more than a second)
-    assert vestingStaking.stakes(first_acc)[3] == 0  # last reward timestamp
-    assert vestingStaking.stakes(first_acc)[4] == 1  # vesting strategy number (1 - linear, 2 - stepped)
+    assert vestingStaking.stakes(first_acc)[3] == 1  # vesting strategy number (1 - linear, 2 - stepped)
 
     assert vestingStaking.stakes(second_acc)[0] == second_stake
     assert vestingStaking.stakes(second_acc)[1] == 0
     assert vestingStaking.stakes(second_acc)[2] in range(start_time, start_time + 2)
-    assert vestingStaking.stakes(second_acc)[3] == 0
-    assert vestingStaking.stakes(second_acc)[4] == 2
+    assert vestingStaking.stakes(second_acc)[3] == 2
 
     assert vestingStaking.totalValueLocked() == first_stake + second_stake
 
