@@ -23,4 +23,4 @@ def token(Token, accounts):
 @pytest.fixture(scope="module")
 def vestingStakingAndToken(VestingStaking, Token, accounts):
     token = Token.deploy({'from': accounts[0]})
-    return [VestingStaking.deploy(token, {'from': accounts[0]}), token]
+    return [VestingStaking.deploy(token, {'from': accounts[0]}), token]  # for using both contracts in tests

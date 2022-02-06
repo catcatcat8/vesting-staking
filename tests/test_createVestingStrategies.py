@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 import brownie
 
+""" VestingStaking.sol tests """
+
 def test_correct_create_linear_and_stepped_strategies(accounts, vestingStaking):
     cliff_time_in_days = 30
     vesting_time = 30

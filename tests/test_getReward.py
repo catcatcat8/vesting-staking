@@ -2,6 +2,8 @@
 import re
 import brownie
 
+""" VestingStaking.sol tests """
+
 def test_correct_reward(accounts, vestingStakingAndToken):
     vesting_contract = vestingStakingAndToken[0]
     token_contract = vestingStakingAndToken[1]

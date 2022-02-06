@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 import brownie
 
+""" VestingStaking.sol tests """
+
 def test_add_to_whitelist(accounts, vestingStaking):
     vestingStaking.addToWhitelist((accounts[1], accounts[2]))
 

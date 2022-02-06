@@ -2,6 +2,7 @@
 
 import pytest
 
+""" Token.sol ERC-20 tests """
 
 @pytest.mark.parametrize("idx", range(5))
 def test_initial_approval_is_zero(token, accounts, idx):

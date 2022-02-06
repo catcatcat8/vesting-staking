@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 import brownie
 
+""" VestingStaking.sol tests """
+
 def test_correct_linear_strategy_vesting_withdraw(accounts, vestingStakingAndToken):
     vesting_contract = vestingStakingAndToken[0]
     token_contract = vestingStakingAndToken[1]

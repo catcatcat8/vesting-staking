@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import brownie
 
+""" Token.sol ERC-20 tests """
 
 def test_sender_balance_decreases(accounts, token):
     sender_balance = token.balanceOf(accounts[0])

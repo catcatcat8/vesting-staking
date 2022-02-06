@@ -27,7 +27,7 @@ contract VestingStaking is Ownable{
     }
 
     // Linear - linear withdrawing after cliff time
-    // Stepped - 50% withdrawing in the 1st half after cliff time, 50% - in the 2nd half
+    // Stepped - 50% withdrawing in the 1st half of vesting time, 50% - in the 2nd half
     enum VestingStrategies {
         Linear,
         Stepped
@@ -48,6 +48,7 @@ contract VestingStaking is Ownable{
         uint256 reward;
     }
 
+    // Synthetix-staking
     uint256 public rewardPerTokenStored;
     uint256 public lastUpdateTime;
 
@@ -65,6 +66,9 @@ contract VestingStaking is Ownable{
     // Whitelist
     mapping (address => bool) public isWhitelisted;
 
+    //-------------------------------------------------------------------------
+    // STATE MODIFYING FUNCTIONS
+    //-------------------------------------------------------------------------
 
     /**
      * @dev Initializing token for vesting-staking
@@ -97,11 +101,11 @@ contract VestingStaking is Ownable{
 
 
     function deleteFromWhitelist(address _account) external onlyOwner() {
-        require(isWhitelisted[_account] == true, "This account is not in the whitelist");
+        require(isWhitelisted[_account], "This account is not in the whitelist");
         isWhitelisted[_account] = false;
     }
 
-
+    // Defining initial allocations which will be immediately stacked and start to vest after calling start()
     function initAllocations(address[] memory _accounts, uint256[] memory _stake, uint256[] memory _strategies) external onlyOwner() {
         require(_accounts.length == _stake.length &&_accounts.length == _strategies.length, "Arrays are not the same size");
         require(_accounts.length < 10, "It's allowed to add up to 10 accounts at a time");
@@ -137,33 +141,10 @@ contract VestingStaking is Ownable{
     }
 
 
-    modifier updateReward() {
-        rewardPerTokenStored = _rewardPerToken();
-        lastUpdateTime = block.timestamp;
-        stakes[msg.sender].reward = _earned();
-        stakes[msg.sender].rewardPerTokenPaid = rewardPerTokenStored;
-        _;
-    }
-
-
-    function _rewardPerToken() internal returns (uint256) {
-        if (totalValueLocked == 0) {
-            return 0;
-        }
-        return rewardPerTokenStored + (
-            rewardPerHour * (block.timestamp - lastUpdateTime) * 1e18 / totalValueLocked / 1 hours
-        );
-    }
-
-    function _earned() internal returns (uint256) {
-        return (stakes[msg.sender].tokensStaked * (_rewardPerToken() - stakes[msg.sender].rewardPerTokenPaid) / 1e18) + stakes[msg.sender].reward;
-    }
-
-
     function stake(uint256 _stake, uint256 _strategyNum) external updateReward {
         require(status == Status.Started, "Vesting-staking hasn't started yet");
-        require(isStakeholder[msg.sender] != true, "You are stakeholder already");
-        require(isWhitelisted[msg.sender] == true, "You are not in the whitelist, ask admin to add you");
+        require(!isStakeholder[msg.sender], "You are stakeholder already");
+        require(isWhitelisted[msg.sender], "You are not in the whitelist, ask admin to add you");
         require(_strategyNum != 0 && _strategyNum <= vestingStrategiesAmount, "Wrong strategy number");
         require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _stake, "Contract owner doesn't have that many tokens");
 
@@ -202,7 +183,7 @@ contract VestingStaking is Ownable{
 
     function editAmountPerWallet(address _account, uint256 _amount) external onlyOwner() {
         require(status == Status.NotStarted, "Staking is started already");
-        require(isStakeholder[_account] == true, "This account is not a stakeholder");
+        require(isStakeholder[_account], "This account is not a stakeholder");
         require(_amount > 0);
         
         uint256 prevAmount = stakes[_account].tokensStaked;
@@ -214,9 +195,47 @@ contract VestingStaking is Ownable{
     }
 
 
+    function addAditionalReward(uint256 _extraReward) external onlyOwner() {
+        require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _extraReward);
+        rewardPool = rewardPool.add(_extraReward);
+    }
+
+    //-------------------------------------------------------------------------
+    // MODIFIERS
+    //-------------------------------------------------------------------------
+
+    modifier updateReward() {
+        rewardPerTokenStored = _rewardPerToken();
+        lastUpdateTime = block.timestamp;
+        stakes[msg.sender].reward = _earned();
+        stakes[msg.sender].rewardPerTokenPaid = rewardPerTokenStored;
+        _;
+    }
+
+    //-------------------------------------------------------------------------
+    // INTERNAL FUNCTIONS
+    //-------------------------------------------------------------------------
+
+    function _rewardPerToken() internal returns (uint256) {
+        if (totalValueLocked == 0) {
+            return 0;
+        }
+        return rewardPerTokenStored + (
+            rewardPerHour * (block.timestamp - lastUpdateTime) * 1e18 / totalValueLocked / 1 hours
+        );
+    }
+
+    function _earned() internal returns (uint256) {
+        return (stakes[msg.sender].tokensStaked * (_rewardPerToken() - stakes[msg.sender].rewardPerTokenPaid) / 1e18) + stakes[msg.sender].reward;
+    }
+
+    //-------------------------------------------------------------------------
+    // VIEW FUNCTIONS
+    //-------------------------------------------------------------------------
+
     function calculateVestingSchedule(address _account) public view returns (uint256) {
         require(status == Status.Started, "Vesting-staking hasn't started yet");
-        require(isStakeholder[_account] == true, "User is not a stakeholder");
+        require(isStakeholder[_account], "User is not a stakeholder");
 
         VestingInfo memory accountStrategy = vestingStrategies[stakes[_account].vestingStrategyNumber];
 
@@ -253,12 +272,6 @@ contract VestingStaking is Ownable{
             return 0;
         }
     }
-
-    function addAditionalReward(uint256 _extraReward) external onlyOwner() {
-        require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _extraReward);
-        rewardPool = rewardPool.add(_extraReward);
-    }
-
 
     function getTVLAmount() public view returns (uint256) {
         return totalValueLocked;
