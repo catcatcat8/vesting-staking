@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity >0.6.0;
+pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-
 import "./Token.sol";
 
 contract VestingStaking is Ownable{
-    using SafeMath for uint256;
 
     address public contractOwner;
     address public tokenAddress;
@@ -73,7 +70,7 @@ contract VestingStaking is Ownable{
     //-------------------------------------------------------------------------
 
     // Initializing token for vesting-staking
-    constructor(address _tokenAddress) public {
+    constructor(address _tokenAddress) {
         tokenAddress = _tokenAddress;
         contractOwner = msg.sender;
         status = Status.NotStarted;
@@ -113,20 +110,20 @@ contract VestingStaking is Ownable{
 
         for (uint i=0; i<_accounts.length; i++) {
             address account = _accounts[i];
-            uint256 stake = _stake[i];
+            uint256 accStake = _stake[i];
             uint256 strategyNum = _strategies[i];
             require(account != address(0));
-            require(Token(tokenAddress).balanceOf(contractOwner) >= stake + totalValueLocked);
-            require(stake > 0 && stake < 50_000);
+            require(Token(tokenAddress).balanceOf(contractOwner) >= accStake + totalValueLocked);
+            require(accStake > 0 && accStake < 50_000);
             require(strategyNum != 0 && strategyNum <= vestingStrategiesAmount);
 
             StakeInfo memory newStake = StakeInfo(
-                stake, 0, startTimestamp, strategyNum, 0, 0
+                accStake, 0, startTimestamp, strategyNum, 0, 0
             );
             stakes[account] = newStake;
             isStakeholder[account] = true;
 
-            totalValueLocked = totalValueLocked.add(stake);
+            totalValueLocked += accStake;
         }
     }
 
@@ -155,7 +152,7 @@ contract VestingStaking is Ownable{
 
         isStakeholder[msg.sender] = true;
 
-        totalValueLocked = totalValueLocked.add(_stake);
+        totalValueLocked += _stake;
     }
 
     // Getting stake reward to the balance of ERC20 token according to account's stake share to TVL
@@ -165,7 +162,7 @@ contract VestingStaking is Ownable{
         require(rewardPool >= tokensReward, "Not enough tokens in reward pool");
 
         Token(tokenAddress).transferFrom(contractOwner, msg.sender, tokensReward);
-        rewardPool = rewardPool.sub(tokensReward);
+        rewardPool -= tokensReward;
         stakes[msg.sender].reward = 0;
     }
 
@@ -175,9 +172,9 @@ contract VestingStaking is Ownable{
         require(withdraw != 0);
 
         Token(tokenAddress).transferFrom(contractOwner, msg.sender, withdraw);
-        stakes[msg.sender].tokensStaked = stakes[msg.sender].tokensStaked.sub(withdraw);
-        stakes[msg.sender].vestingWithdrawed = stakes[msg.sender].vestingWithdrawed.add(withdraw);
-        totalValueLocked = totalValueLocked.sub(withdraw);
+        stakes[msg.sender].tokensStaked -= withdraw;
+        stakes[msg.sender].vestingWithdrawed += withdraw;
+        totalValueLocked -= withdraw;
     }
 
     // Admin function for editing the amount of staked token for account before start() is called
@@ -191,13 +188,13 @@ contract VestingStaking is Ownable{
 
         stakes[_account].tokensStaked = _amount;
 
-        totalValueLocked = totalValueLocked.sub(prevAmount).add(_amount);
+        totalValueLocked = totalValueLocked - prevAmount + _amount;
     }
 
     // Replenishment of the reward pool by the contract owner
     function addAditionalReward(uint256 _extraReward) external onlyOwner() {
         require(Token(tokenAddress).balanceOf(contractOwner) >= rewardPool + totalValueLocked + _extraReward);
-        rewardPool = rewardPool.add(_extraReward);
+        rewardPool += _extraReward;
     }
 
     //-------------------------------------------------------------------------
@@ -218,7 +215,7 @@ contract VestingStaking is Ownable{
     //-------------------------------------------------------------------------
 
     // Calculates not paid current reward per staked token
-    function _rewardPerToken() internal returns (uint256) {
+    function _rewardPerToken() internal view returns (uint256) {
         if (totalValueLocked == 0) {
             return 0;
         }
@@ -228,7 +225,7 @@ contract VestingStaking is Ownable{
     }
 
     // Calculates reward for stakeholder
-    function _earned() internal returns (uint256) {
+    function _earned() internal view returns (uint256) {
         return (stakes[msg.sender].tokensStaked * (_rewardPerToken() - stakes[msg.sender].rewardPerTokenPaid) / 1e18) + stakes[msg.sender].reward;
     }
 
@@ -263,8 +260,8 @@ contract VestingStaking is Ownable{
                 }
                 else {  // 50% in 1st half, 50% in 2nd half
 
-                    if ((block.timestamp - startVesting - accountStrategy.cliffTime) < accountStrategy.vestingTime.div(2)) {  // 1st half
-                        withdraw = (stakes[msg.sender].tokensStaked + stakes[msg.sender].vestingWithdrawed).div(2) - stakes[msg.sender].vestingWithdrawed;
+                    if ((block.timestamp - startVesting - accountStrategy.cliffTime) < accountStrategy.vestingTime / 2) {  // 1st half
+                        withdraw = (stakes[msg.sender].tokensStaked + stakes[msg.sender].vestingWithdrawed) / 2 - stakes[msg.sender].vestingWithdrawed;
                     }
                     else {
                         withdraw = stakes[msg.sender].tokensStaked;
